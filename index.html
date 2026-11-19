@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Box → Prodotti e lotti</title>
+<style>
+:root{
+  color-scheme: dark;
+  --bg:#0b0d12; --surface:#141821; --surface2:#1b2030; --border:#262c3d;
+  --text:#e8ebf3; --muted:#8b93a7; --accent:#7c9cff; --accent2:#4ade80;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--text);
+  font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.5}
+main{max-width:860px;margin:0 auto;padding:32px 20px 64px}
+h1{font-size:1.5rem;font-weight:650;margin:0 0 4px;letter-spacing:-.01em}
+.sub{color:var(--muted);margin:0 0 24px;font-size:.95rem}
+textarea{width:100%;min-height:180px;resize:vertical;background:var(--surface);color:var(--text);
+  border:1px solid var(--border);border-radius:12px;padding:14px;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
+  outline:none;transition:border-color .15s}
+textarea:focus{border-color:var(--accent)}
+.bar{display:flex;gap:10px;align-items:center;margin:12px 0 28px}
+button{background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:10px;
+  padding:8px 14px;font:inherit;font-size:.9rem;cursor:pointer}
+button:hover{border-color:var(--accent)}
+.err{color:#f87171;font-size:.9rem}
+.msg{display:inline-flex;gap:8px;align-items:center;background:var(--surface);border:1px solid var(--border);
+  border-radius:999px;padding:6px 14px;font-size:.9rem;color:var(--muted);margin-bottom:20px}
+.msg b{color:var(--text);font-variant-numeric:tabular-nums}
+.box{background:var(--surface);border:1px solid var(--border);border-radius:14px;margin-bottom:20px;overflow:hidden}
+.box-h{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--border)}
+.box-h h2{margin:0;font-size:1.05rem;font-weight:600}
+.box-h h2 span{color:var(--accent);font-variant-numeric:tabular-nums}
+.badge{font-size:.8rem;color:var(--muted)}
+.prod{padding:12px 18px;border-bottom:1px solid var(--border);display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.prod:last-child{border-bottom:0}
+.pid{min-width:120px;font-variant-numeric:tabular-nums}
+.pid small{display:block;color:var(--muted);font-size:.75rem}
+.pid strong{font-size:1rem}
+.lots{display:flex;flex-wrap:wrap;gap:8px;flex:1}
+.lot{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:4px 10px;font-size:.85rem;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.lot i{font-style:normal;color:var(--accent2);margin-left:8px}
+.empty{padding:18px;color:var(--muted)}
+.sr{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px}
+@media(max-width:560px){.sr{grid-template-columns:1fr}}
+.sr input{width:100%;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:12px;padding:12px 14px;font:inherit;outline:none;transition:border-color .15s}
+.sr input:focus{border-color:var(--accent)}
+.hit{background:rgba(250,204,21,.22);outline:1px solid rgba(250,204,21,.6);border-radius:6px;padding:0 4px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Box → Prodotti e lotti</h1>
+  <p class="sub">Incolla l’XML: vedrai per ogni box i prodotti (Article Id) e i relativi lotti (Batch Number).</p>
+  <textarea id="xml" placeholder="Incolla qui l’XML…" spellcheck="false"></textarea>
+  <div class="bar"><button id="clear" type="button">Pulisci</button><span class="err" id="err"></span></div>
+  <div class="sr">
+    <input id="searchId" type="search" placeholder="Cerca Article Id…" autocomplete="off" spellcheck="false">
+    <input id="search" type="search" placeholder="Cerca lotto…" autocomplete="off" spellcheck="false">
+  </div>
+  <div id="out"></div>
+</main>
+<script>
+(function(){
+  var ta=document.getElementById('xml'), out=document.getElementById('out'), err=document.getElementById('err'), search=document.getElementById('search'), searchId=document.getElementById('searchId');
+
+  function el(tag,cls,text){var e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;}
+
+  function render(){
+    out.textContent='';err.textContent='';
+    var txt=ta.value.trim();
+    if(!txt)return;
+    var doc=new DOMParser().parseFromString(txt,'application/xml');
+    if(doc.getElementsByTagName('parsererror').length){err.textContent='XML non valido.';return;}
+
+    var msgs=doc.getElementsByTagName('OutputMessage');
+    if(msgs.length){
+      var id=(msgs[0].getAttribute('Id')||'').replace(/^PRE-/i,'');
+      var m=el('div','msg','OutputMessage Id ');
+      m.appendChild(el('b',null,id));
+      out.appendChild(m);
+    }
+
+    var boxes={}, order=[];
+    function ensure(n){if(!boxes[n]){boxes[n]={arts:{},aorder:[],packs:0};order.push(n);}return boxes[n];}
+
+    var bx=doc.getElementsByTagName('Box');
+    for(var i=0;i<bx.length;i++){var n=bx[i].getAttribute('Number');if(n)ensure(n);}
+
+    var arts=doc.getElementsByTagName('Article');
+    for(var a=0;a<arts.length;a++){
+      var aid=arts[a].getAttribute('Id')||'';
+      var packs=arts[a].getElementsByTagName('Pack');
+      for(var p=0;p<packs.length;p++){
+        var bn=packs[p].getAttribute('BoxNumber')||'—';
+        var lot=packs[p].getAttribute('BatchNumber')||'—';
+        var b=ensure(bn);
+        if(!b.arts[aid]){b.arts[aid]={lots:{},lorder:[]};b.aorder.push(aid);}
+        var A=b.arts[aid];
+        if(!A.lots[lot]){A.lots[lot]=0;A.lorder.push(lot);}
+        A.lots[lot]++;b.packs++;
+      }
+    }
+
+    if(!order.length){err.textContent='Nessun box trovato.';return;}
+
+    var q=search.value.trim().toLowerCase(), qi=searchId.value.trim().toLowerCase(), shown=0;
+    order.forEach(function(n){
+      var b=boxes[n];
+      var vis=b.aorder.map(function(aid){
+        var A=b.arts[aid];
+        if(qi&&aid.toLowerCase().indexOf(qi)<0)return null;
+        var idHit=!!qi;
+        var lots=q?A.lorder.filter(function(l){return l.toLowerCase().indexOf(q)>-1;}):A.lorder;
+        return lots.length?{aid:aid,lots:lots,idHit:idHit}:null;
+      }).filter(Boolean);
+      if((q||qi)&&!vis.length)return;
+      shown++;
+      var card=el('section','box');
+      var h=el('div','box-h'), h2=el('h2',null,'Box ');
+      h2.appendChild(el('span',null,n));
+      h.appendChild(h2);
+      var pk=0;vis.forEach(function(v){v.lots.forEach(function(l){pk+=b.arts[v.aid].lots[l];});});
+      h.appendChild(el('span','badge',vis.length+' prodotti · '+pk+' confezioni'));
+      card.appendChild(h);
+      if(!b.aorder.length)card.appendChild(el('div','empty','Box vuoto.'));
+      vis.forEach(function(v){var aid=v.aid;
+        var A=b.arts[aid], row=el('div','prod'), pid=el('div','pid');
+        pid.appendChild(el('small',null,'Article Id'));
+        pid.appendChild(el('strong',v.idHit?'hit':null,aid));
+        row.appendChild(pid);
+        var lots=el('div','lots');
+        v.lots.forEach(function(l){
+          var c=el('span','lot'+(q&&l.toLowerCase().indexOf(q)>-1?' hit':''),l);
+          c.appendChild(el('i',null,'×'+A.lots[l]));
+          lots.appendChild(c);
+        });
+        row.appendChild(lots);
+        card.appendChild(row);
+      });
+      out.appendChild(card);
+    });
+    if((q||qi)&&!shown)out.appendChild(el('div','empty','Nessun risultato.'));
+  }
+
+  try{search.value=localStorage.getItem('q')||'';searchId.value=localStorage.getItem('qid')||'';}catch(e){}
+  search.addEventListener('input',function(){try{localStorage.setItem('q',search.value);}catch(e){}render();});
+  searchId.addEventListener('input',function(){try{localStorage.setItem('qid',searchId.value);}catch(e){}render();});
+  ta.addEventListener('input',render);
+  document.getElementById('clear').addEventListener('click',function(){ta.value='';render();ta.focus();});
+})();
+</script>
+</body>
+</html>
